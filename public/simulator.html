@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Event Simulator</title>
+    <style id="dynamic-styles">
+        body { font-family: Arial, sans-serif; text-align: center; background-color: #f4f4f4; padding: 20px; }
+        .content-wrapper { display: flex; justify-content: center; align-items: flex-start; margin: 20px auto; }
+        .grid-wrapper { display: flex; flex-direction: column; }
+        #channel-search { width: calc(100% - 20px); padding: 12px; margin: 0 10px 15px 10px; border: 1px solid #ccc; border-radius: 5px; position: sticky; top: 0; background: white; z-index: 100; font-size: 16px; }
+        .grid-container { background: white; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); max-height: 80vh; overflow-y: auto; scroll-behavior: smooth; }
+        .events-log-container { flex: 2; }
+        .events-scroll-area { max-height: 75vh; overflow-y: auto; padding: 0 10px; background: white; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .grid { display: grid; justify-content: center; }
+        button { width: 100%; color: white; border: none; border-radius: 8px; cursor: pointer; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; transition: transform 0.2s; }
+        .green { background: #4CAF50; } 
+        .red { background: #F44336; }   
+        .highlight-search { box-shadow: 0 0 15px 8px #FFD700 !important; transform: scale(1.05) !important; outline: 3px solid #FFD700 !important; z-index: 10; }
+        .channel-no { opacity: 0.8; margin-bottom: 2px; }
+        .description-text { font-weight: bold; line-height: 1.2; }
+        table { margin: 0 auto; border-collapse: collapse; width: 100%; background: white; }
+        th, td { border: 1px solid #eee; padding: 12px; text-align: left; font-size: 14px; }
+        th { background: #e0e0e0; color: #333; }
+        .status-red { color: #F44336; font-weight: bold; }
+        .status-green { color: #4CAF50; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Station Control Panel</h1>
+    <p>Viewing Status for StationID: <strong id="station-id-display" style="color:#007bff;">Loading...</strong></p>
+
+    <div class="content-wrapper" id="content-wrapper">
+        <div class="grid-wrapper">
+            <input type="text" id="channel-search" placeholder="Search Channel No or Description...">
+            <div class="grid-container" id="grid-container">
+                <div class="grid" id="grid"></div>
+            </div>
+        </div>
+        <div class="events-log-container">
+            <h2>Database Event Log</h2>
+            <div class="events-scroll-area"> 
+                <table>
+                    <thead>
+                        <tr><th>ID</th><th>Channel</th><th>Status</th><th>Created At</th></tr>
+                    </thead>
+                    <tbody id="events-table"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const grid = document.getElementById("grid");
+        const gridContainer = document.getElementById("grid-container");
+        const contentWrapper = document.getElementById("content-wrapper");
+        const eventsTable = document.getElementById("events-table");
+        const searchInput = document.getElementById("channel-search");
+        const urlParams = new URLSearchParams(window.location.search);
+        const stationId = urlParams.get('stationId');
+
+        async function applyConfig() {
+            try {
+                const res = await fetch(`/config.json?v=${Date.now()}`);
+                const config = await res.json();
+                contentWrapper.style.maxWidth = `${config.layout.maxContentWidthPx}px`;
+                gridContainer.style.maxWidth = `${config.layout.gridContainerMaxWidthPx}px`;
+                gridContainer.style.padding = `${config.buttonStyles.gridPaddingPx}px`;
+                const dynamicCss = `
+                    .grid { grid-template-columns: repeat(${config.layout.gridColumns}, 1fr); gap: ${config.buttonStyles.buttonGapPx}px; }
+                    button { height: ${config.buttonStyles.buttonHeightPx}px; }
+                    .channel-no { font-size: ${config.fontStyles.channelNoFontSizePx}px !important; }
+                    .description-text { font-size: ${config.fontStyles.descriptionFontSizePx}px !important; }
+                `;
+                document.getElementById('dynamic-styles').innerHTML += dynamicCss;
+            } catch (e) { console.error("Config load error"); }
+        }
+
+        function loadEvents() {
+            fetch(`/events/${stationId}`).then(res => res.json()).then(events => {
+                eventsTable.innerHTML = "";
+                events.forEach(ev => {
+                    const statusLabel = ev.status == 1 ? "ON" : "OFF";
+                    const statusClass = ev.status == 1 ? "status-red" : "status-green";
+                    
+                    const d = new Date(ev.created_at);
+                    const dateStr = `${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}-${d.getFullYear()}`;
+                    const timeStr = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}:${String(d.getMilliseconds()).padStart(3,'0')}`;
+
+                    eventsTable.innerHTML += `<tr>
+                        <td>${ev.id}</td>
+                        <td>${ev.ch_no}</td>
+                        <td><span class="${statusClass}">${statusLabel} (${ev.status})</span></td>
+                        <td>${dateStr} ${timeStr}</td>
+                    </tr>`;
+                });
+            });
+        }
+
+        function handleSearch() {
+            const term = searchInput.value.toLowerCase().trim();
+            const buttons = grid.querySelectorAll('button');
+            let firstMatch = null;
+
+            buttons.forEach(btn => {
+                const isMatch = btn.dataset.channel.includes(term) || btn.dataset.desc.includes(term);
+                if (term !== "" && isMatch) {
+                    btn.classList.add('highlight-search');
+                    if (!firstMatch) firstMatch = btn;
+                } else {
+                    btn.classList.remove('highlight-search');
+                }
+            });
+
+            if (firstMatch) {
+                firstMatch.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+
+        async function init() {
+            if (stationId) document.getElementById('station-id-display').textContent = stationId;
+            await applyConfig();
+            loadEvents();
+            
+            const channelsRes = await fetch(`/channels/${stationId}`);
+            const channels = await channelsRes.json();
+            const statusRes = await fetch(`/status/${stationId}`);
+            const statusMap = await statusRes.json();
+
+            grid.innerHTML = "";
+            channels.forEach(ch => {
+                const btn = document.createElement("button");
+                const chNo = String(ch["Channel Number"]).padStart(4, '0');
+                const descText = ch["Description"] || "No Description";
+                let curStat = statusMap[chNo] !== undefined ? statusMap[chNo] : ch['DefaultStatusCode'];
+                
+                btn.className = curStat === "1" ? "red" : "green";
+                btn.dataset.channel = chNo;
+                btn.dataset.desc = descText.toLowerCase();
+                btn.dataset.status = curStat;
+                btn.innerHTML = `<span class="channel-no">CH-${chNo}</span><span class="description-text">${descText}</span>`;
+                
+                btn.onclick = () => {
+                    const nextStat = btn.dataset.status === "0" ? "1" : "0";
+                    fetch("/event", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ ch_no: chNo, status: nextStat, station_id: stationId })
+                    }).then(() => {
+                        btn.dataset.status = nextStat;
+                        btn.className = nextStat === "1" ? "red" : "green";
+                        loadEvents();
+                    });
+                };
+                grid.appendChild(btn);
+            });
+            searchInput.addEventListener('input', handleSearch);
+        }
+
+        init();
+        setInterval(loadEvents, 5000);
+    </script>
+</body>
+</html>

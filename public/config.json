@@ -1,0 +1,17 @@
+{
+    "layout": {
+        "gridColumns": 4,  
+        "maxContentWidthPx": 1400,
+        "gridContainerMaxWidthPx": 600,
+        "eventsLogMinWidthPx": 700
+    },
+    "buttonStyles": {
+        "buttonHeightPx": 100,
+        "buttonGapPx": 15,
+        "gridPaddingPx": 20
+    },
+    "fontStyles": {
+        "channelNoFontSizePx": 10,
+        "descriptionFontSizePx": 15
+    }
+}
